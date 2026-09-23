@@ -1,0 +1,5 @@
+name = "music-search-site"
+pages_build_output_dir = "."
+compatibility_date = "2025-01-01"
+# 部署命令： wrangler pages deploy .
+# 静态文件位于项目根目录，函数位于 functions/ 目录，会被自动识别。

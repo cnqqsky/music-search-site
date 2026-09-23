@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# 搜索结果分页等带多参数的 URL 建议通过 canonical 指向首结果页，避免重复内容
+# 本文件仅允许抓取静态与首结果页，分页后续页可加 noindex 元标签
+
+Sitemap: https://ms-dj4.pages.dev/sitemap.xml

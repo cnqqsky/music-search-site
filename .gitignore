@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Cloudflare build artifacts
+.wrangler/
+.mf/
+dist/
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local temp
+*.log
+
+# 探测脚本产生的临时输出，不入库
+scripts/*-out.txt
+scripts/test-backend-out.txt
+scripts/test-smoke-out.txt
+scripts/diag-rank.mjs

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>音乐搜索器 · 网易云音乐在线搜索与试听</title>
+  <meta name="description" content="音乐搜索器直连网易云音乐曲库，输入歌名或歌手即可在线检索、试听与查看歌词，一站式找歌。">
+  <meta name="keywords" content="音乐搜索,歌曲搜索,在线试听,网易云音乐,歌词同步,无损音质">
+  <link rel="canonical" href="https://ms-dj4.pages.dev/">
+  <meta name="robots" content="index,follow">
+  <meta name="theme-color" content="#14100E">
+  <link rel="alternate" hreflang="zh-CN" href="https://ms-dj4.pages.dev/">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="音乐搜索器 · 一首歌，听遍全网">
+  <meta property="og:description" content="网易云音乐曲库在线检索，一键试听与歌词查看。">
+  <meta property="og:url" content="https://ms-dj4.pages.dev/">
+  <meta property="og:locale" content="zh_CN">
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="音乐搜索器 · 一首歌，听遍全网">
+  <meta name="twitter:description" content="网易云音乐曲库在线检索，一键试听与歌词查看。">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;700;900&family=Ma+Shan+Zheng&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- JSON-LD: WebSite + SearchAction -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "音乐搜索器",
+    "url": "https://ms-dj4.pages.dev/",
+    "description": "网易云音乐在线搜索与试听服务",
+    "inLanguage": "zh-CN",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "https://ms-dj4.pages.dev/s?q={search_term_string}",
+      "query-input": "required name=search_term_string"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <nav class="container nav" aria-label="主导航">
+      <a class="brand" href="home.html">音乐搜索器<span class="dot">·</span></a>
+      <ul class="nav-links">
+        <li><a href="home.html" class="active">首页</a></li>
+        <li><a href="search.html?q=%E7%A8%BB%E9%A6%99">搜索</a></li>
+        <li><a href="help.html">帮助</a></li>
+      </ul>
+      <form class="nav-search" action="search.html" method="get" role="search">
+        <input type="text" name="q" placeholder="搜歌名 / 歌手" aria-label="搜索歌曲">
+      </form>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="container hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <span class="badge">网易云曲库 · 在线试听</span>
+        <h1 id="hero-title">一首歌，<span class="accent">听遍全网</span></h1>
+        <p class="hero-sub">直连网易云曲库，输入歌名或歌手，即时检索与试听，一站找齐。</p>
+        <form class="hero-search" action="search.html" method="get" role="search">
+          <input type="text" name="q" placeholder="想听什么？试试「稻香」" aria-label="搜索歌曲">
+          <button type="submit">搜索</button>
+        </form>
+      </div>
+      <div class="vinyl-wrap" aria-hidden="true">
+        <div class="vinyl"></div>
+      </div>
+    </section>
+
+    <!-- 平台网格 -->
+    <section class="container section" id="platforms" aria-labelledby="plat-title">
+      <h2 class="section-title" id="plat-title">已接入六大音乐平台</h2>
+      <p class="section-desc">一次检索，结果即时展示，点击即可在线播放。</p>
+      <div class="platform-grid">
+        <div class="platform-card"><div class="platform-logo" style="background:#C20C0C">网</div><div class="platform-name">网易云音乐</div><div class="platform-tag">2.3 亿曲库</div></div>
+        <div class="platform-card"><div class="platform-logo" style="background:#31C27C">Q</div><div class="platform-name">QQ音乐</div><div class="platform-tag">正版无损</div></div>
+        <div class="platform-card"><div class="platform-logo" style="background:#141DEA">酷</div><div class="platform-name">酷狗音乐</div><div class="platform-tag">海量热歌</div></div>
+        <div class="platform-card"><div class="platform-logo" style="background:#FF7A00">酷</div><div class="platform-name">酷我音乐</div><div class="platform-tag">Hi-Res</div></div>
+        <div class="platform-card"><div class="platform-logo" style="background:#E4002B">咪</div><div class="platform-name">咪咕音乐</div><div class="platform-tag">彩铃热榜</div></div>
+        <div class="platform-card"><div class="platform-logo" style="background:#161823">抖</div><div class="platform-name">抖音音乐</div><div class="platform-tag">短视频热歌</div></div>
+      </div>
+    </section>
+
+    <!-- 功能亮点 -->
+    <section class="container section" aria-labelledby="feat-title">
+      <h2 class="section-title" id="feat-title">为什么用音乐搜索器</h2>
+      <p class="section-desc">专注检索聚合，不存储任何音频文件，版权归各平台与权利人所有。</p>
+      <div class="card-grid">
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">◎</div>
+          <h3>全曲库检索</h3>
+          <p>输入一个关键词即可检索网易云曲库，即时播放，省去打开 App 的麻烦。</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">♪</div>
+          <h3>高清无损试听</h3>
+          <p>标注各平台提供的音质（标准 / 高清 / 无损），点击即跳转来源平台播放或下载。</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon" aria-hidden="true">⚑</div>
+          <h3>版权合规</h3>
+          <p>仅作检索入口与跳转，不存储音视频；支持权利人侵权投诉快速下线。</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- 使用步骤 -->
+    <section class="container section" aria-labelledby="step-title">
+      <h2 class="section-title" id="step-title">三步找到想听的歌</h2>
+      <div class="card-grid">
+        <article class="step-card"><div class="step-no">01</div><h3>输入歌名或歌手</h3><p>在首页或顶部搜索框键入关键词，回车即可发起检索。</p></article>
+        <article class="step-card"><div class="step-no">02</div><h3>点击在线播放</h3><p>点击结果卡片即可直接试听，播放器支持列表与循环。</p></article>
+        <article class="step-card"><div class="step-no">03</div><h3>查看详情与歌词</h3><p>提供曲目信息、封面、播放地址与逐字歌词，一站获取。</p></article>
+      </div>
+    </section>
+
+    <!-- 静态 SEO 文案（长尾关键词承载） -->
+    <section class="container section" aria-labelledby="seocopy-title">
+      <div class="seo-copy">
+        <h2 id="seocopy-title">关于音乐搜索器</h2>
+        <p>音乐搜索器是一个网易云音乐在线搜索引擎，帮助你在网易云曲库中快速定位想听的歌曲。无论你想搜流行歌曲、经典老歌、影视原声还是短视频热歌，都可以直接在线试听。</p>
+        <p>本站提供歌曲在线试听入口与下载跳转，支持标准音质、高清音质与无损音质对比。所有音频内容均由原始平台提供，音乐搜索器不存储任何音视频文件，严格遵守各平台版权规则与权利人权益。</p>
+        <p>如果你经常在不同音乐 App 之间来回切换找歌，音乐搜索器能显著提升找歌效率。搜索任意歌名、歌手、专辑或歌词片段，即可获得聚合结果。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <div class="footer-brand">音乐搜索器</div>
+        <p style="color:var(--muted);font-size:14px;max-width:280px">网易云音乐检索与在线试听入口，版权归各平台与权利人所有。</p>
+      </div>
+      <div class="footer-col"><h4>产品</h4><ul>
+        <li><a href="home.html">首页</a></li>
+        <li><a href="search.html?q=%E7%A8%BB%E9%A6%99">歌曲搜索</a></li>
+        <li><a href="help.html">使用帮助</a></li>
+      </ul></div>
+      <div class="footer-col"><h4>平台</h4><ul>
+        <li><a href="search.html?q=%E7%A8%BB%E9%A6%99">网易云音乐</a></li>
+        <li><a href="search.html?q=%E7%A8%BB%E9%A6%99">QQ音乐</a></li>
+        <li><a href="search.html?q=%E7%A8%BB%E9%A6%99">酷狗 / 酷我</a></li>
+      </ul></div>
+      <div class="footer-col"><h4>法律</h4><ul>
+        <li><a href="help.html">免责声明</a></li>
+        <li><a href="help.html">版权投诉</a></li>
+      </ul></div>
+    </div>
+    <div class="container footer-bottom">
+      版权所有 · 2026 音乐搜索器 · 仅作检索聚合，版权归各平台与权利人所有
+    </div>
+  </footer>
+
+  <!-- 本页 SEO 结构标注（设计评审用，上线可移除） -->
+  <section class="container section" aria-label="SEO 结构标注">
+    <div class="seo-note">
+      <h2>本页 SEO 结构标注 · 首页</h2>
+      <ul>
+        <li>唯一 &lt;title&gt;：音乐搜索器 · 网易云音乐在线搜索与试听</li>
+        <li>&lt;meta description&gt; 围绕「音乐搜索 / 在线试听 / 网易云 / 歌词同步」布局长尾词</li>
+        <li>JSON-LD：WebSite + SearchAction（启用站内搜索富媒体摘要）</li>
+        <li>语义地标：header/nav/main/section×4/footer，单一 &lt;h1&gt;「一首歌，听遍全网」</li>
+        <li>canonical 指向 /；hreflang=zh-CN；Open Graph + Twitter Card 完整</li>
+        <li>静态 SEO 文案段承载长尾关键词，利于搜索引擎收录</li>
+      </ul>
+    </div>
+  </section>
+
+</body>
+</html>
