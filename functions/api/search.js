@@ -153,6 +153,8 @@ function buildItem(song, media) {
     size: media ? media.size : 0,
     album: al.name || '',
     duration: song.dt || 0,
+    // 未取到直链 = 该曲目在当前服务节点不可播（多为版权地域限制），前端据此给出明确提示
+    restricted: !media,
   };
 }
 
@@ -241,6 +243,12 @@ async function handle(params) {
   const data = songs.map((s) => buildItem(s, media.get(s.id) || null));
 
   const got = data.filter((d) => d.url).length;
+
+  // 可播优先：无法在当前节点播放的曲目整体后置，避免占用结果顶部位置
+  if (got > 0 && got < data.length) {
+    data.sort((a, b) => (a.restricted === b.restricted ? 0 : a.restricted ? 1 : -1));
+  }
+
   return {
     code: 200,
     data,

@@ -275,6 +275,24 @@ function showHint(msg, kind) {
 }
 function clearHint() { showHint(''); }
 
+// 顶部说明：告知有多少曲目因版权地域限制无法播放，避免用户误以为是站点故障
+function renderRestrictedNotice(list) {
+  const total = list.length;
+  const playable = list.filter(x => x.url).length;
+  const blocked = total - playable;
+  if (!blocked) { setMsg(''); return; }
+  if (playable === 0) {
+    setMsg(
+      '<div class="notice">本次 <strong>全部 ' + total + ' 首</strong>均受版权地域限制，' +
+      '本站服务节点无法获取播放地址。可换用网易云音乐官方客户端收听，或换个关键词重试。</div>'
+    );
+  } else {
+    setMsg(
+      '<div class="notice">另有 <strong>' + blocked + ' 首</strong>受版权地域限制无法播放，已排在结果末尾。</div>'
+    );
+  }
+}
+
 function setMsg(html) { resultsMsg.innerHTML = html || ''; }
 
 function showSkeleton(n) {
@@ -327,7 +345,7 @@ async function doSearch(append) {
         it._uid = it.songid || it.link || (Math.random().toString(36).slice(2));
         state.items.push(it);
       });
-      setMsg('');
+      renderRestrictedNotice(j.data);
       resultsEl.innerHTML = '';
       renderItems(j.data, append);
       loadMoreWrap.classList.toggle('hidden', j.data.length < 10);
@@ -450,26 +468,32 @@ function buildCard(it) {
   const author = esc(it.author || '暂无');
   const plat = PLAT_NAME[it.type] || it.type || '';
   const hasUrl = !!it.url;
+  const restricted = !!it.restricted;
   const brLabel = it.br ? Math.round(it.br / 1000) + 'k' : '';
   const altText = esc((it.title || '音乐') + (it.author ? ' - ' + it.author : '') + ' 封面');
 
   const faved = isFavorite(it);
   card.innerHTML = `
-    <img class="rc-cover" src="${esc(cover)}" alt="${altText}" loading="lazy" decoding="async" width="56" height="56" onerror="this.src='${NOPIC}'">
+    <img class="rc-cover${restricted ? ' dim' : ''}" src="${esc(cover)}" alt="${altText}" loading="lazy" decoding="async" width="56" height="56" onerror="this.src='${NOPIC}'">
     <div class="rc-main">
-      <h3 class="rc-title">${title}<span class="rc-badge">${esc(plat)}</span>${brLabel ? '<span class="rc-br">' + esc(brLabel) + '</span>' : ''}</h3>
+      <h3 class="rc-title">${title}<span class="rc-badge">${esc(plat)}</span>${brLabel ? '<span class="rc-br">' + esc(brLabel) + '</span>' : ''}${restricted ? '<span class="rc-restricted">地区限制</span>' : ''}</h3>
       <div class="rc-author">${author}</div>
     </div>
     <div class="rc-actions">
       <button class="rc-btn fav${faved ? ' active' : ''}" type="button" aria-pressed="${faved}"
               aria-label="${faved ? '取消收藏' : '收藏'} ${title} - ${author}">${faved ? '♥' : '♡'}</button>
       <button class="rc-btn play${hasUrl ? '' : ' retry'}" type="button"
-              aria-label="${hasUrl ? '试听' : '重新获取播放地址'} ${title} - ${author}">${hasUrl ? '试听' : '重试'}</button>
+              aria-label="${hasUrl ? '试听' : '该地区限制，无法播放'} ${title} - ${author}">${hasUrl ? '试听' : '无法播放'}</button>
     </div>`;
 
-  // 无直链时也允许点击：会走单曲补链重试，而不是直接禁用
-  card.querySelector('.rc-btn.play')
-      .addEventListener('click', () => playItem(it, card));
+  const playBtn = card.querySelector('.rc-btn.play');
+  if (hasUrl) {
+    playBtn.addEventListener('click', () => playItem(it, card));
+  } else {
+    // 地区限制由服务端回源时确定，重试也必然失败，故直接禁用而非给无效按钮
+    playBtn.disabled = true;
+    playBtn.title = '该曲目受版权地区限制，当前服务节点无法获取播放地址';
+  }
 
   card.querySelector('.rc-btn.fav').addEventListener('click', () => {
     const added = toggleFavorite(it);

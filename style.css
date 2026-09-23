@@ -398,6 +398,40 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline-offset: 3px
   font-size: 14px;
   line-height: 1.9;
 }
+
+/* 顶部提示条：版权地域限制说明 */
+.notice {
+  background: #fff8e6;
+  border: 1px solid #f4d98a;
+  color: #8a6d1f;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 12px;
+}
+.notice strong { color: #6f5514; }
+
+/* 地区限制曲目的封面降透明度 */
+.rc-cover.dim { opacity: .5; filter: grayscale(.4); }
+.rc-restricted {
+  display: inline-block;
+  font-size: 11px;
+  color: #8a6d1f;
+  background: #fbefd1;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.rc-btn.play:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  background: #f1f2f6;
+  color: #9aa0aa;
+  border-color: var(--border);
+}
+.rc-btn.play:disabled:hover { filter: none; color: #9aa0aa; border-color: var(--border); }
 .empty code {
   background: #f1f2f6;
   border-radius: 5px;
