@@ -18,17 +18,45 @@
 ## 结构
 
 ```
-index.html                 页面 + SEO 元信息 + JSON-LD
-style.css                  样式（网易云风格毛玻璃播放条）
-app.js                     搜索/播放/歌词全部逻辑
-dev.py                     本地预览服务（含 robots/sitemap/manifest 路由）
-functions/api/search.js    生产代理：搜索（转发上游 HTTPS）
-functions/api/dl.js        生产代理：音频直链
-functions/robots.txt.js    动态 robots.txt
-functions/sitemap.xml.js   动态 sitemap.xml
-_headers                   Cloudflare 缓存策略
+public/                    部署目录：只有这里的内容会上传到 Pages
+  index.html               页面 + SEO 元信息 + JSON-LD
+  style.css / styles.css   样式（网易云风格毛玻璃播放条）
+  app.js                   搜索/播放/歌词全部逻辑
+  _headers                 Cloudflare 缓存策略
+functions/                 Pages Functions（服务端路由，不随静态资源公开）
+  api/search.js            搜索：网易云为主，酷狗补位
+  api/url.js               单曲补链（播放失败时重试）
+  api/lyric.js             歌词按需拉取
+  api/dl.js                音频直链
+  robots.txt.js            动态 robots.txt
+  sitemap.xml.js           动态 sitemap.xml
+scripts/                   调试/探测脚本（不部署）
+dev.py                     本地预览服务
 wrangler.toml              Pages 部署配置
 ```
+
+## 部署
+
+```bash
+wrangler pages deploy public --project-name=ms --branch=main
+```
+
+两个易踩的坑：
+
+1. **必须显式传 `--branch=main`**。不带该参数时 wrangler 会按本地 git 分支推断，
+   容易部署到 `master` 预览分支上，而生产域名仍指向旧部署——表现为"改了线上没变"。
+2. **部署目录必须是 `public`**。`.assetsignore` 对直传部署无效，
+   只有目录隔离才能真正避免 `scripts/`、`README.md` 等开发文件被公网访问。
+
+## 音源现状
+
+- **网易云**：主音源，链路完整（搜索 / 取链 / 歌词 / 封面）。
+  取链必须带 `Cookie: os=pc; appver=8.9.70`，否则返回 `code=-110`。
+  缺点：对中国大陆以外 IP 封锁音频地址，本站服务节点在海外，约三成曲目可取直链。
+- **酷狗**：第二音源，`sharefs.kugou.com` 的直链在海外可正常取流，与网易互补。
+  缺点：按 IP 频控极严，超限后长期封禁（`errcode=1002`）。
+  因此仅在网易可播结果不足时触发，命中即缓存 30 分钟，检测到封禁则熔断 10 分钟。
+- **咪咕 / QQ / 酷我**：均已收紧，无法作为备选（详见 `scripts/` 下的探测记录）。
 
 ## 本地预览
 
@@ -36,16 +64,6 @@ wrangler.toml              Pages 部署配置
 python dev.py
 # 打开 http://127.0.0.1:8000
 ```
-
-`dev.py` 在本地同样提供 `/api/search`、`/api/dl` 同源代理，因此本地功能与线上一致。
-
-## 部署
-
-```bash
-wrangler pages deploy . --project-name=ms
-```
-
-Pages 会自动识别 `functions/` 目录为服务端路由。
 
 ## 说明
 

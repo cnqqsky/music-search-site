@@ -1,5 +1,7 @@
 name = "music-search-site"
-pages_build_output_dir = "."
+pages_build_output_dir = "public"
 compatibility_date = "2025-01-01"
 # 部署命令： wrangler pages deploy .
-# 静态文件位于项目根目录，函数位于 functions/ 目录，会被自动识别。
+# 静态资源统一放在 public/，只有该目录会被上传。
+# scripts/、dev.py、README.md 等开发文件留在仓库根，不会出现在公网。
+# 注意：.assetsignore 对直传部署无效，目录隔离才是可靠做法。

@@ -1,8 +1,9 @@
 'use strict';
 
-// 音源：自建网易云链路。原先依赖的第三方聚合接口 miss.qingchengkg.cn 已下线，
-// 网易 / 咪咕 / QQ / 酷狗 中，仅网易的非官方链路仍可稳定跑通"搜索→直链→歌词→封面"全环节。
-const PLAT_NAME = { netease: '网易云' };
+// 音源：网易云 + 酷狗 双链路自建。
+// 原先依赖的第三方聚合接口 miss.qingchengkg.cn 已下线；
+// 实测后可长期跑通「搜索→直链」的公开链路只剩这两条，且二者曲目互补。
+const PLAT_NAME = { netease: '网易云', kugou: '酷狗' };
 const NOPIC = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Crect width='56' height='56' fill='%23e6e8ef'/%3E%3C/svg%3E";
 
 // 状态
@@ -223,14 +224,15 @@ function playFavorite(i) {
   renderPlaylist();
 }
 
-// ---------- 音源状态条（单音源，替代原先的平台切换 chips） ----------
+// ---------- 音源状态条（网易云 + 酷狗 双音源并行，无需手工切换） ----------
 function renderPlatforms() {
   platformsEl.innerHTML = '';
   const note = document.createElement('div');
   note.className = 'src-note';
   note.innerHTML =
-    '<span class="src-badge">当前音源 · 网易云</span>' +
-    '<span class="src-tip">搜索结果按相关度排序，热门歌曲的官方版本会优先展示</span>';
+    '<span class="src-badge">网易云</span>' +
+    '<span class="src-badge">酷狗</span>' +
+    '<span class="src-tip">两个音源同时检索，结果合并去重，可播放的版本排在前面</span>';
   platformsEl.appendChild(note);
   platformsEl.removeAttribute('role');
   platformsEl.removeAttribute('aria-label');
@@ -283,8 +285,8 @@ function renderRestrictedNotice(list) {
   if (!blocked) { setMsg(''); return; }
   if (playable === 0) {
     setMsg(
-      '<div class="notice">本次 <strong>全部 ' + total + ' 首</strong>均受版权地域限制，' +
-      '本站服务节点无法获取播放地址。可换用网易云音乐官方客户端收听，或换个关键词重试。</div>'
+      '<div class="notice">本次 <strong>全部 ' + total + ' 首</strong>均未取到播放地址，' +
+      '两个音源在当前服务节点都受版权限制。可换用网易云音乐、酷狗音乐官方客户端收听，或换个关键词重试。</div>'
     );
   } else {
     setMsg(
@@ -374,7 +376,7 @@ async function doSearch(append) {
 
 // 搜索后同步标题 / 描述 / 结构化数据（利于分享与收录）
 function updateSearchMeta(keyword, type) {
-  const plat = PLAT_NAME[type] || '全网';
+  const plat = '网易云 · 酷狗';
   const title = keyword + ' - ' + plat + '音乐搜索结果 · 音乐搜索器';
   const desc = '「' + keyword + '」在' + plat + '的搜索结果，共 ' + state.items.length +
     ' 条，支持在线试听、逐字同步歌词与曲目信息复制。';
@@ -628,6 +630,8 @@ async function loadLyrics(it) {
   pbLrcBtn.classList.remove('active');
   lrcPanel.classList.add('hidden');
   if (!it.songid) return;
+  // 酷狗歌词为加密 krc，且 songid 是 32 位 hash，不能走网易歌词接口
+  if (it.type && it.type !== 'netease') return;
 
   // 歌词按需拉取：搜索列表不再等待歌词，列表返回更快
   let text = '';

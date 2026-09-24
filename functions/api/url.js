@@ -47,8 +47,53 @@ async function fetchJson(url, timeoutMs) {
   }
 }
 
+const KG_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 9_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Version/9.0 Mobile/13B143 Safari/601.1';
+const KG_API_HOSTS = ['https://m.kugou.com', 'http://m.kugou.com'];
+
 function toHttps(u) {
   return u ? String(u).replace(/^http:\/\//i, 'https://') : '';
+}
+
+// 酷狗歌曲 ID 是 32 位 hash（非数字），据此分流
+function isKugouHash(idRaw) {
+  return /^[0-9a-fA-F]{32}$/.test(String(idRaw || '').trim());
+}
+
+async function fetchKg(url, referer, timeoutMs) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs || 9000);
+  try {
+    const r = await fetch(url, {
+      headers: { 'User-Agent': KG_UA, Referer: referer, Accept: 'application/json, text/plain, */*' },
+      signal: ctl.signal,
+    });
+    if (!r.ok) return null;
+    const t = await r.text();
+    if (!t || t[0] !== '{') return null;
+    return JSON.parse(t);
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// 酷狗补链：hash 换播放地址
+async function resolveKugou(hash) {
+  const qs = `cmd=playInfo&hash=${encodeURIComponent(hash)}`;
+  for (const host of KG_API_HOSTS) {
+    const j = await fetchKg(`${host}/app/i/getSongInfo.php?${qs}`, `http://m.kugou.com/play/info/${hash}`, 9000);
+    if (j && j.url) {
+      return {
+        url: toHttps(j.url),
+        br: j.bitrate ? Number(j.bitrate) * 1000 : 0,
+        size: j.fileSize || 0,
+        level: '',
+      };
+    }
+  }
+  return null;
 }
 
 async function resolve(id) {
@@ -79,6 +124,15 @@ function toResponse(body, status) {
 }
 
 async function respond(idRaw) {
+  // 酷狗：32 位 hash 直接走酷狗链路
+  if (isKugouHash(idRaw)) {
+    const kg = await resolveKugou(String(idRaw).trim());
+    if (!kg) {
+      return toResponse({ code: 404, error: '该曲目暂无可用播放地址，可能是版权限制，请换一首试试' }, 200);
+    }
+    return toResponse({ code: 200, data: kg });
+  }
+
   const id = parseInt(String(idRaw || '').replace(/[^\d]/g, ''), 10);
   if (!id) return toResponse({ code: 400, error: 'id 无效' }, 400);
   const media = await resolve(id);

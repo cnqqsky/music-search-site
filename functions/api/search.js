@@ -129,6 +129,177 @@ async function neUrls(ids) {
   return result;
 }
 
+// ---------- 酷狗音源（第二音源，与网易互补）----------
+// 说明：酷狗 getSongInfo.php 可在 Cloudflare 海外节点直接调用，
+// sharefs.kugou.com 返回的直链无 referer 校验，浏览器可直接播放。
+
+const KG_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 9_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Version/9.0 Mobile/13B143 Safari/601.1';
+const KG_SEARCH_HOSTS = ['https://songsearch.kugou.com', 'http://songsearch.kugou.com'];
+const KG_API_HOSTS = ['https://m.kugou.com', 'http://m.kugou.com'];
+// 单次请求上限：CF 免费版 subrequest 限额 50 次，这里留出充足余量
+const KG_TAKE = 6;
+// 网易可播数低于此值时才补查酷狗：多数搜索无需消耗酷狗配额
+const KG_FALLBACK_MIN = 5;
+
+function kgHeaders(referer) {
+  return {
+    'User-Agent': KG_UA,
+    Referer: referer || 'http://m.kugou.com/',
+    Accept: 'application/json, text/plain, */*',
+  };
+}
+
+// 酷狗检索：返回含 FileHash / SQFileHash 的曲目列表
+async function kgSearch(keyword, n) {
+  const size = n || KG_TAKE;
+  for (const host of KG_SEARCH_HOSTS) {
+    const u =
+      `${host}/song_search_v2?keyword=${encodeURIComponent(keyword)}` +
+      `&page=1&pagesize=${size}&platform=WebFilter&filter=2`;
+    const j = await fetchJson(u, kgHeaders('http://www.kugou.com/'), 8000);
+    const lists = j && j.data && Array.isArray(j.data.lists) ? j.data.lists : [];
+    if (lists.length) return lists;
+  }
+  return [];
+}
+
+// 单曲取播放地址（酷狗无批量接口，只能逐 hash 查询）
+async function kgUrlRaw(hash) {
+  const qs = `cmd=playInfo&hash=${encodeURIComponent(hash)}`;
+  for (const host of KG_API_HOSTS) {
+    const j = await fetchJson(
+      `${host}/app/i/getSongInfo.php?${qs}`,
+      kgHeaders(`http://m.kugou.com/play/info/${hash}`),
+      8000
+    );
+    if (j && j.url) return { info: j, errcode: 0 };
+    if (j) return { info: null, errcode: j.errcode || -1 };
+  }
+  return { info: null, errcode: -2 };
+}
+
+// 酷狗对本机 IP 的频控极严，超限后长时间封锁 IP（errcode=1002，与 UA 无关）。
+// 因此同一 hash 的结果必须缓存复用：同一首歌重复搜索时不再回源。
+async function kgUrl(hash) {
+  const key = `https://kg-cache.invalid/playInfo/${hash}`;
+  try {
+    const cache = caches.default;
+    const hit = await cache.match(key);
+    if (hit) return await hit.json();
+    const res = await kgUrlRaw(hash);
+    if (res.info) {
+      await cache.put(
+        key,
+        new Response(JSON.stringify(res), { headers: { 'Cache-Control': 'max-age=1800' } })
+      );
+    }
+    return res;
+  } catch (e) {
+    // Cache API 不可用时退化为直接请求
+    return kgUrlRaw(hash);
+  }
+}
+
+// 优先取 SQ 音质的 hash；曲库无 SQ 版本时 SQFileHash 恒为全 0 字符串（而非空），
+// 直接当作有效 hash 会导致取链失败，必须回退到普通 FileHash。
+function kgPickHash(x) {
+  const sq = String(x.SQFileHash || '');
+  if (sq && !/^0+$/.test(sq)) return sq;
+  return String(x.FileHash || '');
+}
+
+function kgClean(s) {
+  return String(s || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function kgBuild(list, info) {
+  const hash = kgPickHash(list);
+  const name = kgClean(list.SongName) || '未知曲目';
+  const singer = kgClean(list.SingerName) || '未知歌手';
+  const img = toHttps(
+    (info && (info.imgUrl || info.album_img)) || list.Image || ''
+  ).replace('/{size}/', '/400/');
+  return {
+    title: name,
+    author: singer,
+    songid: hash,
+    link: `https://www.kugou.com/song/#hash=${hash}`,
+    url: info ? toHttps(info.url) : '',
+    pic: img,
+    lrc: '',           // 酷狗歌词为 krc 加密串，暂不支持
+    type: 'kugou',
+    br: info && info.bitrate ? Number(info.bitrate) * 1000 : 0,
+    size: (info && info.fileSize) || 0,
+    album: (info && info.album_name) || kgClean(list.AlbumName) || '',
+    duration: info && info.timeLength ? Number(info.timeLength) * 1000 : 0,
+    restricted: !(info && info.url),
+  };
+}
+
+// 熔断：酷狗按 IP 频控，超限后长时间封禁（errcode=1002，与 UA 无关）。
+// CF 会并发运行多个 isolate，仅用模块级变量无法阻止新 isolate 继续发请求，
+// 因此把封禁截止时间写入 Cache API，实现跨 isolate 共享。
+const KG_BLOCK_KEY = 'https://kg-cache.invalid/block-until';
+const KG_BLOCK_MS = 10 * 60 * 1000;
+let kgBlockUntilLocal = 0;
+
+async function kgBlocked() {
+  const now = Date.now();
+  if (now < kgBlockUntilLocal) return true;
+  try {
+    const hit = await caches.default.match(KG_BLOCK_KEY);
+    if (hit) {
+      const until = Number(await hit.text()) || 0;
+      if (until > now) {
+        kgBlockUntilLocal = until;
+        return true;
+      }
+    }
+  } catch (e) { /* Cache API 不可用时退化为本地判定 */ }
+  return false;
+}
+
+async function kgMarkBlocked() {
+  const until = Date.now() + KG_BLOCK_MS;
+  kgBlockUntilLocal = until;
+  try {
+    await caches.default.put(
+      KG_BLOCK_KEY,
+      new Response(String(until), { headers: { 'Cache-Control': `max-age=${KG_BLOCK_MS / 1000}` } })
+    );
+  } catch (e) { /* 忽略 */ }
+}
+
+// 检索 + 取链：返回可播曲目与诊断信息（分阶段计数，便于定位是检索失败还是取链被限流）
+async function kgResult(keyword) {
+  if (await kgBlocked()) {
+    return { items: [], searchCount: 0, urlOk: 0, errcode: 1002, err: '限流熔断中，稍后自动恢复' };
+  }
+  const lists = await kgSearch(keyword, KG_TAKE);
+  if (!lists.length) return { items: [], searchCount: 0, urlOk: 0, errcode: null, err: '搜索无结果' };
+  const items = [];
+  let lastErr = null;
+  let banned = 0;
+  for (const x of lists.slice(0, KG_TAKE)) {
+    const hash = kgPickHash(x);
+    if (!hash) continue;
+    const r = await kgUrl(hash);
+    if (r.info) items.push(kgBuild(x, r.info));
+    else if (lastErr === null && r.errcode) lastErr = r.errcode;
+    // 前两条就全部被拒即可判定封禁，无需打满配额
+    if (r.errcode === 1002 && ++banned >= 2) break;
+  }
+  if (lastErr === 1002 && !items.length) await kgMarkBlocked();
+  return {
+    items,
+    searchCount: lists.length,
+    urlOk: items.length,
+    errcode: lastErr,
+    err: lastErr ? 'errcode=' + lastErr : '无可用播放地址',
+  };
+}
+
 // ---------- 结果组装 ----------
 
 function artists(song) {
@@ -202,21 +373,28 @@ async function handle(params) {
   const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1);
   const limit = PAGE_SIZE;
   const offset = (page - 1) * limit;
+  // src=netease / kugou 可单独指定音源，便于排查单个音源的可用性；默认两源并行
+  const src = (params.get('src') || 'all').toString();
 
   if (!input) return { code: 400, error: 'input 不能为空' };
 
-  let songs = [];
+  // ID / 链接反查走网易精确查询，不需要第二音源
+  const isDirect = filter === 'id' || filter === 'url';
 
-  if (filter === 'id') {
-    const id = parseInt(input.replace(/[^\d]/g, ''), 10);
-    if (!id) return { code: 400, error: '音乐 ID 无效' };
-    songs = await neDetail([id]);
-  } else if (filter === 'url') {
-    const id = idFromLink(input);
-    if (!id) return { code: 400, error: '未能从地址中解析出音乐 ID' };
-    songs = await neDetail([id]);
+  let songs = [];
+  if (isDirect) {
+    if (filter === 'id') {
+      const id = parseInt(input.replace(/[^\d]/g, ''), 10);
+      if (!id) return { code: 400, error: '音乐 ID 无效' };
+      songs = await neDetail([id]);
+    } else {
+      const id = idFromLink(input);
+      if (!id) return { code: 400, error: '未能从地址中解析出音乐 ID' };
+      songs = await neDetail([id]);
+    }
   } else {
-    songs = await neSearch(input, offset, limit);
+    // src=kugou 时跳过网易检索，只走酷狗链路
+    songs = src === 'kugou' ? [] : await neSearch(input, offset, limit);
     if (songs.length > 1) {
       // 稳定排序：相关度高的排前，其余保持网易原始权重
       songs = songs
@@ -234,13 +412,30 @@ async function handle(params) {
     }
   }
 
-  if (!songs.length) {
-    return { code: 200, data: [], source: 'netease', diag: 'no-result' };
+  // 网易取链先行。酷狗频控很严，只有在网易可播结果不足时才补查，
+  // 这样绝大多数搜索不会消耗酷狗的请求配额，避免站点被拉黑。
+  const media = songs.length ? await neUrls(songs.map((s) => s.id).filter(Boolean)) : new Map();
+  const data = songs.map((s) => buildItem(s, media.get(s.id) || null));
+  const nePlayable = data.filter((d) => d.url).length;
+
+  let kgRes = { items: [], searchCount: 0, urlOk: 0, errcode: null, err: '未触发（网易结果充足）' };
+  const needKg = !isDirect && src !== 'netease' && (src === 'kugou' || nePlayable < KG_FALLBACK_MIN);
+  if (needKg) {
+    kgRes = (await kgResult(input).catch(() => null)) || {
+      items: [], searchCount: 0, urlOk: 0, errcode: -1, err: '酷狗请求异常',
+    };
   }
 
-  const ids = songs.map((s) => s.id).filter(Boolean);
-  const media = await neUrls(ids);
-  const data = songs.map((s) => buildItem(s, media.get(s.id) || null));
+  // 合并酷狗曲目：仅当网易已有同名且可播的版本时才去重，
+  // 否则网易不可播而酷狗可播的情况下，酷狗永远无法补位（这是此处的常见 bug）
+  const normKey = (t) => String(t || '').replace(/[（(].*?[)）]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const neGoodKeys = new Set(
+    data.filter((d) => d.type === 'netease' && d.url).map((d) => normKey(d.title))
+  );
+  for (const k of kgRes.items) {
+    if (neGoodKeys.size && neGoodKeys.has(normKey(k.title))) continue;
+    data.push(k);
+  }
 
   const got = data.filter((d) => d.url).length;
 
@@ -252,8 +447,17 @@ async function handle(params) {
   return {
     code: 200,
     data,
-    source: 'netease',
-    diag: { total: data.length, playable: got },
+    source: 'netease+kugou',
+    diag: {
+      total: data.length,
+      playable: got,
+      netease: data.filter((d) => d.type === 'netease').length,
+      neteasePlayable: nePlayable,
+      kugou: data.filter((d) => d.type === 'kugou').length,
+      kugouSearch: kgRes.searchCount,
+      kugouUrlOk: kgRes.urlOk,
+      kugouErr: kgRes.err || '',
+    },
   };
 }
 
