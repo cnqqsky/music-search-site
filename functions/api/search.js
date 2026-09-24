@@ -317,6 +317,10 @@ function buildItem(song, media) {
     songid: String(id),
     link: `https://music.163.com/#/song?id=${id}`,
     url: media ? media.url : '',
+    // 网易外链：无需 Cookie，服务端 302 到 CDN。
+    // 关键差异——CDN 本身不设地域限制，只有"签发地址的 API"对境外返回空。
+    // 因此境外节点取不到地址时，可把外链交给访客浏览器去解析：访客在中国境内即可正常播放。
+    outer: `https://music.163.com/song/media/outer/url?id=${id}.mp3`,
     pic: param(toHttps(pic), 200) || '',
     lrc: '',            // 歌词由 /api/lyric 按需拉取，避免拖慢列表
     type: 'netease',
@@ -367,7 +371,7 @@ function idFromLink(raw) {
 
 // ---------- 主流程 ----------
 
-async function handle(params) {
+async function handle(params, visitorCN) {
   const input = normalize(params.get('input'));
   const filter = (params.get('filter') || 'name').toString();
   const page = Math.max(1, parseInt(params.get('page') || '1', 10) || 1);
@@ -439,15 +443,22 @@ async function handle(params) {
 
   const got = data.filter((d) => d.url).length;
 
-  // 可播优先：无法在当前节点播放的曲目整体后置，避免占用结果顶部位置
-  if (got > 0 && got < data.length) {
-    data.sort((a, b) => (a.restricted === b.restricted ? 0 : a.restricted ? 1 : -1));
+  // 排序：对访客真正不可播的曲目后置。
+  // 网易外链对境内访客可用，因此境内访客不应把这些曲目压到末尾（否则相关度排序被破坏）。
+  const blockedForVisitor = (d) => !d.url && !(visitorCN && d.outer);
+  const playableForVisitor = data.filter((d) => !blockedForVisitor(d)).length;
+  if (playableForVisitor > 0 && playableForVisitor < data.length) {
+    data.sort((a, b) =>
+      blockedForVisitor(a) === blockedForVisitor(b) ? 0 : blockedForVisitor(a) ? 1 : -1
+    );
   }
 
   return {
     code: 200,
     data,
     source: 'netease+kugou',
+    // 访客是否在中国境内：决定前端要不要对"无 CDN 直链"的曲目给出外链兜底提示
+    visitorCN: !!visitorCN,
     diag: {
       total: data.length,
       playable: got,
@@ -472,6 +483,12 @@ function toResponse(body, status) {
   });
 }
 
+// 访客所在地判定：外链仅在境内可解析，据此决定前端提示策略
+function isCN(context) {
+  const cf = context && context.request && context.request.cf;
+  return !!(cf && cf.country === 'CN');
+}
+
 export async function onRequestPost(context) {
   const { request } = context;
   let params;
@@ -489,7 +506,7 @@ export async function onRequestPost(context) {
     }
   }
   try {
-    const body = await handle(params);
+    const body = await handle(params, isCN(context));
     return toResponse(body, body.code === 400 ? 400 : 200);
   } catch (e) {
     return toResponse({ code: 502, error: '音源请求失败：' + e.message }, 502);
@@ -500,7 +517,7 @@ export async function onRequestPost(context) {
 export async function onRequestGet(context) {
   const params = new URL(context.request.url).searchParams;
   try {
-    const body = await handle(params);
+    const body = await handle(params, isCN(context));
     return toResponse(body, body.code === 400 ? 400 : 200);
   } catch (e) {
     return toResponse({ code: 502, error: '音源请求失败：' + e.message }, 502);

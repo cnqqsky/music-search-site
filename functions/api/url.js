@@ -136,10 +136,14 @@ async function respond(idRaw) {
   const id = parseInt(String(idRaw || '').replace(/[^\d]/g, ''), 10);
   if (!id) return toResponse({ code: 400, error: 'id 无效' }, 400);
   const media = await resolve(id);
-  if (!media) {
-    return toResponse({ code: 404, error: '该曲目暂无可用播放地址，可能是版权限制，请换一首试试' }, 200);
-  }
-  return toResponse({ code: 200, data: media });
+  if (media) return toResponse({ code: 200, data: media });
+
+  // 服务端取不到地址时回退到网易外链：它会 302 到 CDN，
+  // 访客在中国境内即可播放（境外会被拦截，前端会给出提示）。
+  return toResponse({
+    code: 200,
+    data: { url: `https://music.163.com/song/media/outer/url?id=${id}.mp3`, br: 0, size: 0, level: 'outer' },
+  });
 }
 
 export async function onRequestGet(context) {

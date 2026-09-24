@@ -20,6 +20,7 @@ const state = {
   lrcFileOffset: 0,   // LRC 文件内 [offset:] 声明的偏移（秒）
   lrcOffset: 0,       // 用户手动微调（秒），持久化
   layout: 'inline', // inline = 内嵌歌词播放器 | bar = 底部条+悬浮歌词面板
+  visitorCN: false, // 由服务端按访客 IP 下发，决定外链提示文案
 };
 
 // DOM
@@ -277,20 +278,29 @@ function showHint(msg, kind) {
 }
 function clearHint() { showHint(''); }
 
-// 顶部说明：告知有多少曲目因版权地域限制无法播放，避免用户误以为是站点故障
+// 顶部说明：告知有多少曲目需走外链兜底，避免用户误以为是站点故障
+// 外链由访客浏览器解析（服务端 302 到 CDN），中国境内可正常播放。
 function renderRestrictedNotice(list) {
   const total = list.length;
-  const playable = list.filter(x => x.url).length;
-  const blocked = total - playable;
-  if (!blocked) { setMsg(''); return; }
-  if (playable === 0) {
+  const direct = list.filter(x => x.url).length;   // 服务端已取到 CDN 直链
+  const viaOuter = list.filter(x => !x.url && x.outer).length;
+  const blocked = total - direct - viaOuter;
+  if (!viaOuter && !blocked) { setMsg(''); return; }
+
+  const outerWord = state.visitorCN ? '将通过网易外链播放' : '需在中国境内网络下才能播放';
+  if (direct === 0 && viaOuter === 0) {
     setMsg(
       '<div class="notice">本次 <strong>全部 ' + total + ' 首</strong>均未取到播放地址，' +
       '两个音源在当前服务节点都受版权限制。可换用网易云音乐、酷狗音乐官方客户端收听，或换个关键词重试。</div>'
     );
+  } else if (blocked === 0) {
+    setMsg(
+      '<div class="notice">其中 <strong>' + viaOuter + ' 首</strong>服务端未取到直链，' + outerWord + '。</div>'
+    );
   } else {
     setMsg(
-      '<div class="notice">另有 <strong>' + blocked + ' 首</strong>受版权地域限制无法播放，已排在结果末尾。</div>'
+      '<div class="notice">其中 <strong>' + viaOuter + ' 首</strong>' + outerWord +
+      '；另有 <strong>' + blocked + ' 首</strong>暂无可用地址，已排在结果末尾。</div>'
     );
   }
 }
@@ -341,6 +351,9 @@ async function doSearch(append) {
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const j = await resp.json();
+
+    // 服务端按访客 IP 判定是否在中国境内，用于外链提示文案
+    if (typeof j.visitorCN === 'boolean') state.visitorCN = j.visitorCN;
 
     if (j.code === 200 && Array.isArray(j.data) && j.data.length) {
       j.data.forEach(it => {
@@ -469,8 +482,13 @@ function buildCard(it) {
   const title = esc(it.title || '暂无');
   const author = esc(it.author || '暂无');
   const plat = PLAT_NAME[it.type] || it.type || '';
+  // 播放源优先级：服务端直链 > 网易外链（由访客浏览器解析）
   const hasUrl = !!it.url;
-  const restricted = !!it.restricted;
+  const hasOuter = !!it.outer;
+  const canTry = hasUrl || hasOuter;
+  // 只有「既无直链也无外链」才算真正不可播
+  const restricted = !!it.restricted && !hasOuter;
+  const viaOuter = !hasUrl && hasOuter;
   const brLabel = it.br ? Math.round(it.br / 1000) + 'k' : '';
   const altText = esc((it.title || '音乐') + (it.author ? ' - ' + it.author : '') + ' 封面');
 
@@ -478,23 +496,27 @@ function buildCard(it) {
   card.innerHTML = `
     <img class="rc-cover${restricted ? ' dim' : ''}" src="${esc(cover)}" alt="${altText}" loading="lazy" decoding="async" width="56" height="56" onerror="this.src='${NOPIC}'">
     <div class="rc-main">
-      <h3 class="rc-title">${title}<span class="rc-badge">${esc(plat)}</span>${brLabel ? '<span class="rc-br">' + esc(brLabel) + '</span>' : ''}${restricted ? '<span class="rc-restricted">地区限制</span>' : ''}</h3>
+      <h3 class="rc-title">${title}<span class="rc-badge">${esc(plat)}</span>${brLabel ? '<span class="rc-br">' + esc(brLabel) + '</span>' : ''}${restricted ? '<span class="rc-restricted">地区限制</span>' : ''}${viaOuter && !state.visitorCN ? '<span class="rc-restricted">需境内网络</span>' : ''}</h3>
       <div class="rc-author">${author}</div>
     </div>
     <div class="rc-actions">
       <button class="rc-btn fav${faved ? ' active' : ''}" type="button" aria-pressed="${faved}"
               aria-label="${faved ? '取消收藏' : '收藏'} ${title} - ${author}">${faved ? '♥' : '♡'}</button>
       <button class="rc-btn play${hasUrl ? '' : ' retry'}" type="button"
-              aria-label="${hasUrl ? '试听' : '该地区限制，无法播放'} ${title} - ${author}">${hasUrl ? '试听' : '无法播放'}</button>
+              aria-label="${canTry ? '试听' : '暂无可用播放地址'} ${title} - ${author}">${canTry ? '试听' : '无法播放'}</button>
     </div>`;
 
   const playBtn = card.querySelector('.rc-btn.play');
-  if (hasUrl) {
+  if (canTry) {
     playBtn.addEventListener('click', () => playItem(it, card));
+    if (viaOuter) {
+      playBtn.title = state.visitorCN
+        ? '将通过网易外链播放（由你的网络解析地址）'
+        : '服务端无法获取地址，将尝试网易外链；该外链通常仅在中国境内可用';
+    }
   } else {
-    // 地区限制由服务端回源时确定，重试也必然失败，故直接禁用而非给无效按钮
     playBtn.disabled = true;
-    playBtn.title = '该曲目受版权地区限制，当前服务节点无法获取播放地址';
+    playBtn.title = '暂无可用播放地址';
   }
 
   card.querySelector('.rc-btn.fav').addEventListener('click', () => {
@@ -505,9 +527,16 @@ function buildCard(it) {
 }
 
 // ---------- 播放 ----------
-// 列表里未取到直链的曲目（多为版权限制），点播放时再单曲补链重试一次
+// 播放源优先级：服务端直链 > 网易外链
+// 外链会 302 到 CDN，由访客网络解析；中国境内有效，境外通常被拦截。
+function pickSource(it) {
+  return it.url || it.outer || '';
+}
+
+// 列表里未取到直链的曲目，点播放时再单曲补链重试一次
 async function ensureUrl(it) {
   if (it.url) return true;
+  if (it.outer) return true;              // 有外链即可直接尝试，无需请求服务端
   const id = it.songid;
   if (!id) return false;
   try {
@@ -559,7 +588,8 @@ function startPlayback(it, card) {
     const btn = card.querySelector('.rc-btn.play');
     if (btn) { btn.textContent = '播放中'; btn.disabled = false; }
   }
-  audio.src = it.url;
+  it._triedOuter = false;
+  audio.src = pickSource(it);
   audio.play().catch(() => {});
 }
 
@@ -1142,9 +1172,23 @@ pbFavBtn.addEventListener('click', () => {
   showHint(added ? '已加入收藏：' + (it.title || '') : '已取消收藏：' + (it.title || ''));
 });
 
-// 收藏的直链可能过期，播放失败时给出明确提示
+// 播放失败时做一次降级：直链失效 → 改用网易外链重新解析
 audio.addEventListener('error', () => {
-  if (audio.src) showHint('播放失败：音频地址可能已失效，请重新搜索后再试', 'error');
+  if (!audio.src) return;
+  const it = state.currentItem;
+  if (it && it.outer && !it._triedOuter && audio.src !== it.outer) {
+    it._triedOuter = true;
+    it.url = '';                 // 直链已失效，清掉以便下次直接走外链
+    audio.src = it.outer;
+    audio.play().catch(() => {});
+    return;
+  }
+  showHint(
+    state.visitorCN
+      ? '播放失败：音频地址可能已失效，请重新搜索后再试'
+      : '播放失败：当前网络无法解析该音频地址，换一首或稍后再试',
+    'error'
+  );
 });
 
 // ---------- 启动 ----------
