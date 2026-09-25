@@ -457,6 +457,30 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline-offset: 3px
   margin-left: 6px;
   vertical-align: middle;
 }
+/* 酷狗补位进行中：浅紫调，区别于「失败灰」 */
+.rc-filling {
+  display: inline-block;
+  font-size: 11px;
+  color: #5b5bd6;
+  background: #eef2ff;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+  animation: kgPulse 1.1s ease-in-out infinite;
+}
+@keyframes kgPulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+/* 酷狗有版权：引导前往站外收听 */
+.rc-link {
+  display: inline-block;
+  font-size: 11px;
+  color: #1a73e8;
+  background: #e8f0fe;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
 .rc-btn.play:disabled {
   opacity: .55;
   cursor: not-allowed;
@@ -465,6 +489,15 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline-offset: 3px
   border-color: var(--border);
 }
 .rc-btn.play:disabled:hover { filter: none; color: #9aa0aa; border-color: var(--border); }
+/* 酷狗补位中：浅紫调 + 进度光标，明确「正在补」而非「失败」 */
+.rc-btn.play.filling:disabled {
+  opacity: .85;
+  background: #eef2ff;
+  color: #5b5bd6;
+  border-color: rgba(79, 70, 229, .3);
+  cursor: progress;
+}
+.rc-btn.play.filling:disabled:hover { filter: none; background: #eef2ff; }
 .empty code {
   background: #f1f2f6;
   border-radius: 5px;

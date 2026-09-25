@@ -144,6 +144,8 @@ function favPayload(it) {
     link: it.link || '',
     url: it.url || '',
     outer: it.outer || '',   // 无直链的曲目靠外链兜底，收藏时一并保留，否则收藏后无法播放
+    kgHash: it.kgHash || '', // 酷狗补位跳转用 hash，收藏时一并保留
+    kgState: it.kgState || '',
     pic: it.pic || '',
     lrc: (it.lrc && it.lrc.length > 6000) ? it.lrc.slice(0, 6000) : (it.lrc || ''),
   };
@@ -215,6 +217,7 @@ function syncFavButtons() {
 function playFavorite(i) {
   const f = favorites[i];
   if (!f) return;
+  if (f.kgState === 'link' && f.kgHash) { window.open(kugouPlayUrl(f.kgHash), '_blank', 'noopener'); return; }
   if (!f.url && !f.outer) { showHint('该收藏缺少播放地址，请重新搜索收藏', 'error'); return; }
   if (!f.url && getProbe(f) === 'dead') {
     showHint('《' + (f.title || '该曲目') + '》在网易云已无版权或已下架，换个版本试试', 'error');
@@ -572,6 +575,126 @@ async function runOuterProbes(items) {
   await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, todo.length) }, worker));
   probing = false;
   refreshProbeSummary();
+
+  // 探测判死的曲目，尝试酷狗第二音源补位（仅处理网易确实无版权的）
+  const deadTodos = todo.filter((it) => getProbe(it) === 'dead');
+  if (deadTodos.length) runKgFill(deadTodos);
+}
+
+// ---------- 酷狗补位（专补网易无版权/已下架曲目）----------
+// 思路：浏览器侧用 JSONP 直连酷狗搜索（绕开 CORS 与 CF 边缘频控）拿到 hash，
+// 再回调 /api/kgurl 取链。付费/无免费源则如实标注，不再假装可播。
+const KG_FILL_KEY = 'ms_kg_fill_v1';
+const KG_FILL_TTL = 7 * 24 * 3600 * 1000;
+const KG_FILL_CONC = 3;
+
+function loadKgFillStore() {
+  const out = {};
+  try {
+    const obj = JSON.parse(localStorage.getItem(KG_FILL_KEY) || '{}') || {};
+    const now = Date.now();
+    Object.keys(obj).forEach((k) => {
+      const v = obj[k];
+      if (v && now - (v.t || 0) < KG_FILL_TTL) out[k] = v;
+    });
+  } catch (e) {}
+  return out;
+}
+const kgFillStore = loadKgFillStore();
+function saveKgFillStore() {
+  try { localStorage.setItem(KG_FILL_KEY, JSON.stringify(kgFillStore)); } catch (e) {}
+}
+function kgFillKey(it) {
+  return (it.title || '') + '|' + (it.author || '');
+}
+function cleanKw(s) {
+  return String(s || '').replace(/<[^>]+>/g, '').replace(/[（(].*?[)）]/g, '').replace(/\s+/g, ' ').trim();
+}
+// 优先 HQ(320k)，其次 SQ(flac)，兜底普通 hash
+function kgPickHash(x) {
+  const hq = String(x.HQFileHash || '').replace(/^0+$/, '');
+  if (hq) return hq;
+  const sq = String(x.SQFileHash || '').replace(/^0+$/, '');
+  if (sq) return sq;
+  return String(x.FileHash || '');
+}
+// JSONP 直连酷狗搜索，返回 lists 或 null
+function kgJsonpSearch(keyword) {
+  return new Promise((resolve) => {
+    const cb = '__kgcb_' + Math.random().toString(36).slice(2);
+    let s = null;
+    const timer = setTimeout(() => { cleanup(); resolve(null); }, 6000);
+    function cleanup() {
+      clearTimeout(timer);
+      try { delete window[cb]; } catch (e) {}
+      if (s && s.parentNode) s.parentNode.removeChild(s);
+    }
+    window[cb] = (data) => {
+      cleanup();
+      try { resolve((data && data.data && data.data.lists) || []); }
+      catch (e) { resolve(null); }
+    };
+    s = document.createElement('script');
+    s.src = 'https://songsearch.kugou.com/song_search_v2?keyword=' +
+      encodeURIComponent(keyword) + '&page=1&pagesize=5&platform=WebFilter&filter=2&callback=' + cb;
+    s.onerror = () => { cleanup(); resolve(null); };
+    document.body.appendChild(s);
+  });
+}
+// 从候选里挑最匹配当前曲目的
+function pickKgMatch(lists, it) {
+  const name = cleanKw(it.title);
+  const singer = cleanKw(it.author);
+  let best = null, bestScore = 0;
+  for (const x of lists) {
+    const xn = cleanKw(x.SongName);
+    const xs = cleanKw(x.SingerName);
+    let sc = 0;
+    if (xn === name) sc += 100;
+    else if (xn.includes(name) || name.includes(xn)) sc += 60;
+    if (singer && xs.includes(singer)) sc += 50;
+    if (sc > bestScore) { bestScore = sc; best = x; }
+  }
+  return best || lists[0];
+}
+function isKgPay(x) {
+  // 搜索结果里 Price>0 表示需付费/会员才能播放完整曲
+  return Number(x.Price || x.HQPrice || x.SQPrice || 0) > 0;
+}
+function kugouPlayUrl(hash) {
+  return 'https://www.kugou.com/song/#hash=' + encodeURIComponent(hash);
+}
+function applyKgResult(it, res) {
+  it.kgState = res.state;
+  if (res.state === 'link') it.kgHash = res.hash;
+  kgFillStore[kgFillKey(it)] = { state: res.state, hash: res.hash || '', t: Date.now() };
+  saveKgFillStore();
+  refreshCardState(it);
+}
+async function fillOne(it) {
+  const cached = kgFillStore[kgFillKey(it)];
+  if (cached) { applyKgResult(it, cached); return; }
+  it.kgState = 'searching';
+  refreshCardState(it);
+  const lists = await kgJsonpSearch((it.title || '') + ' ' + (it.author || ''));
+  if (!lists || !lists.length) { applyKgResult(it, { state: 'none' }); return; }
+  const match = pickKgMatch(lists, it);
+  const hash = kgPickHash(match);
+  if (!hash) { applyKgResult(it, { state: 'none' }); return; }
+  // 浏览器直连取链被 CORS 挡、服务端取链被 CF 频控挡，故改为「搜到即跳转酷狗收听」
+  applyKgResult(it, isKgPay(match) ? { state: 'pay' } : { state: 'link', hash });
+}
+async function runKgFill(items) {
+  const todo = (items || []).filter((it) => !it.url && !it.kgHash && !it.kgState && getProbe(it) === 'dead');
+  if (!todo.length) return;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < todo.length) {
+      const it = todo[cursor++];
+      await fillOne(it);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(KG_FILL_CONC, todo.length) }, worker));
 }
 
 // 探测出结论后，用真实统计刷新顶部说明——相比"预计会有 N 首走外链"，
@@ -582,13 +705,20 @@ function refreshProbeSummary() {
   if (!total) return;
   const direct = list.filter((x) => x.url).length;
   const alive = list.filter((x) => !x.url && x.outer && getProbe(x) === 'ok').length;
-  const dead = list.filter((x) => !x.url && (getProbe(x) === 'dead' || !x.outer)).length;
-  if (!alive && !dead) return;   // 尚未得出任何结论时保留原提示
+  // 补位成功/付费/无源 不再算作「网易无版权」，避免统计失真
+  const kgLink = list.filter((x) => x.kgState === 'link').length;
+  const kgPay = list.filter((x) => x.kgState === 'pay').length;
+  const kgNone = list.filter((x) => x.kgState === 'none').length;
+  const dead = list.filter((x) => !x.url && !x.kgHash && (getProbe(x) === 'dead' || !x.outer)).length;
+  if (!alive && !dead && !kgLink && !kgPay && !kgNone) return;   // 尚无任何结论时保留原提示
 
   const parts = [];
   if (direct) parts.push('<strong>' + direct + ' 首</strong>可直接播放');
   if (alive) parts.push('<strong>' + alive + ' 首</strong>经网易外链播放');
-  if (dead) parts.push('<strong>' + dead + ' 首</strong>在网易云已无版权（已标灰，可试其他版本）');
+  if (kgLink) parts.push('<strong>' + kgLink + ' 首</strong>在酷狗可收听（点「去酷狗」前往）');
+  if (kgPay) parts.push('<strong>' + kgPay + ' 首</strong>为付费歌曲暂不支持');
+  if (kgNone) parts.push('<strong>' + kgNone + ' 首</strong>酷狗也无免费音源');
+  if (dead) parts.push('<strong>' + dead + ' 首</strong>在网易云已无版权（可试其他版本）');
   setMsg('<div class="notice">本次 <strong>' + total + ' 首</strong>中：' + parts.join('；') + '。</div>');
 }
 
@@ -601,55 +731,72 @@ function refreshCardState(it) {
 
 function paintCardState(card, it) {
   const hasUrl = !!it.url;
+  const hasKgLink = !!(it.kgHash && it.kgState === 'link');
   const hasOuter = !!it.outer;
   const probe = getProbe(it);
-  // 服务端直链可直接播放；只有「无直链」时，外链实测失效或压根没有来源才算不可播
-  const dead = !hasUrl && (probe === 'dead' || !hasOuter);
-  if (dead) card.classList.remove('playing');   // 已判定不可播，不再保留播放中高亮
+  const dead = !hasUrl && !hasKgLink && (probe === 'dead' || !hasOuter);
 
   const btn = card.querySelector('.rc-btn.play');
   const statusEl = card.querySelector('.rc-status');
   const cover = card.querySelector('.rc-cover');
 
-  if (btn) {
-    btn.textContent = dead ? '无版权' : (card.classList.contains('playing') ? '播放中' : '试听');
-    btn.disabled = dead;
-    btn.classList.toggle('retry', !hasUrl && !dead);
-    btn.classList.toggle('dead', dead);
-    if (dead) {
-      btn.title = hasOuter
-        ? '该曲目在网易云已无版权或已下架，可试列表中的其他版本'
-        : '暂无可用播放地址';
-    } else if (hasUrl) {
-      btn.title = '';
-    } else {
-      btn.title = probe === 'ok'
-        ? '经网易外链播放（播放地址由你的网络解析）'
-        : state.visitorCN
-          ? '外链地址由你的网络解析，点击可直接尝试'
-          : '服务端无法获取地址，将尝试网易外链；该外链通常仅在中国境内可用';
-    }
-    btn.setAttribute(
-      'aria-label',
-      (dead ? '无版权，无法播放 ' : '试听 ') + (it.title || '') + ' - ' + (it.author || '')
-    );
-  }
+  // 酷狗补位态优先于网易态呈现：补位中 / 已补到(跳转) / 付费 / 无源
+  let label = '试听', disabled = false, deadLike = false, retry = false, title = '';
 
-  if (statusEl) {
-    if (dead) {
-      statusEl.innerHTML = hasOuter
-        ? '<span class="rc-nocopyright">无版权</span>'
-        : '<span class="rc-nocopyright">暂无音源</span>';
-    } else if (!hasUrl && probe === 'ok') {
-      statusEl.innerHTML = '<span class="rc-playable">可播</span>';
+  if (it.kgState === 'searching') {
+    label = '补位中'; disabled = true;
+    title = '正在从酷狗查找可用音源…';
+    statusEl && (statusEl.innerHTML = '<span class="rc-filling">酷狗补位…</span>');
+  } else if (hasKgLink) {
+    label = '去酷狗';
+    retry = true;
+    title = '该曲目在酷狗有版权，点此前往酷狗收听';
+    statusEl && (statusEl.innerHTML = '<span class="rc-link">酷狗可听</span>');
+  } else if (it.kgState === 'pay') {
+    label = '付费'; disabled = true; deadLike = true;
+    title = '该曲目为付费歌曲，本站暂不支持播放';
+    statusEl && (statusEl.innerHTML = '<span class="rc-nocopyright">付费曲</span>');
+  } else if (it.kgState === 'none') {
+    label = '无源'; disabled = true; deadLike = true;
+    title = '酷狗也未收录该曲目的免费音源';
+    statusEl && (statusEl.innerHTML = '<span class="rc-nocopyright">无音源</span>');
+  } else if (dead) {
+    label = '无版权'; disabled = true; deadLike = true;
+    title = hasOuter
+      ? '该曲目在网易云已无版权或已下架，可试列表中的其他版本'
+      : '暂无可用播放地址';
+    statusEl && (statusEl.innerHTML = hasOuter
+      ? '<span class="rc-nocopyright">无版权</span>'
+      : '<span class="rc-nocopyright">暂无音源</span>');
+  } else {
+    // 网易直链或外链可播
+    label = card.classList.contains('playing') ? '播放中' : '试听';
+    if (!hasUrl && probe === 'ok') {
+      statusEl && (statusEl.innerHTML = '<span class="rc-playable">可播</span>');
     } else if (!hasUrl && !state.visitorCN) {
-      statusEl.innerHTML = '<span class="rc-restricted">需境内网络</span>';
+      statusEl && (statusEl.innerHTML = '<span class="rc-restricted">需境内网络</span>');
     } else {
-      statusEl.innerHTML = '';
+      statusEl && (statusEl.innerHTML = '');
     }
+    retry = !hasUrl && !deadLike;
+    title = hasUrl ? ''
+      : (probe === 'ok'
+        ? '经网易外链播放（播放地址由你的网络解析）'
+        : (state.visitorCN
+          ? '外链地址由你的网络解析，点击可直接尝试'
+          : '服务端无法获取地址，将尝试网易外链；该外链通常仅在中国境内可用'));
   }
 
-  if (cover) cover.classList.toggle('dim', dead);
+  if (btn) {
+    btn.textContent = label;
+    btn.disabled = disabled;
+    btn.classList.toggle('retry', retry);
+    btn.classList.toggle('dead', deadLike);
+    btn.classList.toggle('filling', it.kgState === 'searching');
+    btn.title = title;
+    btn.setAttribute('aria-label', (disabled ? '无法播放 ' : '试听 ') + (it.title || '') + ' - ' + (it.author || ''));
+  }
+  if (cover) cover.classList.toggle('dim', deadLike);
 }
 
 function buildCard(it) {
@@ -723,7 +870,12 @@ async function ensureUrl(it) {
 }
 
 async function playItem(it, card) {
-  // 既无直链也无外链，或外链已被实测判定失效：直接给出准确原因，不做无谓请求
+  // 酷狗跳转态：直接前往酷狗收听（站内取链被 CF 频控，改为站外收听）
+  if (it.kgState === 'link' && it.kgHash) {
+    window.open(kugouPlayUrl(it.kgHash), '_blank', 'noopener');
+    return;
+  }
+  // 既无直链也无外链，或外链已被实测判定失效：直接给出准确原因
   if (!it.url && !it.outer) {
     showHint('《' + (it.title || '该曲目') + '》暂无可用播放地址，换个关键词或换一首试试', 'error');
     return;
