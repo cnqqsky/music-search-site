@@ -383,13 +383,24 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline-offset: 3px
 .rc-btn:hover { border-color: var(--accent); color: var(--accent); }
 .rc-btn.play { background: var(--accent); color: #fff; border-color: var(--accent); }
 .rc-btn.play:hover { filter: brightness(1.07); color: #fff; }
-/* 无直链：转为次要样式，但仍可点击补链重试 */
+/* 无服务端直链：走网易外链（地址由访客网络解析），仍是可点的按钮。
+   这里刻意不用灰白样式——灰白会让人误以为按钮不可用，而实际上其中相当一部分能正常播放 */
 .rc-btn.play.retry {
   background: #fff;
-  color: #6b7280;
+  color: var(--accent);
+  border-color: rgba(79, 70, 229, .38);
+}
+.rc-btn.play.retry:hover { border-color: var(--accent); background: rgba(79, 70, 229, .06); }
+
+/* 浏览器实测外链失效（网易已无版权 / 已下架）：确实不可播 */
+.rc-btn.play.dead {
+  opacity: .6;
+  cursor: not-allowed;
+  background: #f1f2f6;
+  color: #9aa0aa;
   border-color: var(--border);
 }
-.rc-btn.play.retry:hover { border-color: var(--accent); color: var(--accent); }
+.rc-btn.play.dead:hover { background: #f1f2f6; color: #9aa0aa; border-color: var(--border); }
 
 .empty, .loading {
   text-align: center;
@@ -419,6 +430,28 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline-offset: 3px
   font-size: 11px;
   color: #8a6d1f;
   background: #fbefd1;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+/* 浏览器实测外链有效：可直接播放 */
+.rc-playable {
+  display: inline-block;
+  font-size: 11px;
+  color: #0f7b4f;
+  background: #e3f6ec;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+/* 浏览器实测外链失效：网易已无版权 / 已下架 */
+.rc-nocopyright {
+  display: inline-block;
+  font-size: 11px;
+  color: #8c8f99;
+  background: #f1f2f6;
   border-radius: 6px;
   padding: 2px 6px;
   margin-left: 6px;

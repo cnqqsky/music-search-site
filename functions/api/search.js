@@ -461,7 +461,11 @@ async function handle(params, visitorCN) {
     visitorCN: !!visitorCN,
     diag: {
       total: data.length,
+      // playable 仅统计「服务端已签发直链」的曲目——这些必定可播。
+      // outerOnly 的曲目地址由访客浏览器解析，有效性只有浏览器能判定
+      //（网易对数据中心 IP 一律返回 404，服务端无法预判），故不计入 playable。
       playable: got,
+      outerOnly: data.filter((d) => !d.url && d.outer).length,
       netease: data.filter((d) => d.type === 'netease').length,
       neteasePlayable: nePlayable,
       kugou: data.filter((d) => d.type === 'kugou').length,
