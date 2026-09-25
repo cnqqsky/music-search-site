@@ -1213,3 +1213,32 @@ body.inline-player { padding-bottom: 200px; }
   /* 触屏无 hover，收藏的操作图标常驻显示 */
   .fav-list { grid-template-columns: 1fr; }
 }
+
+
+/* 平台切换按钮 */
+.plat-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.plat-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.plat-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.plat-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}

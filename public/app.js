@@ -1,15 +1,20 @@
 'use strict';
 
-// 音源：网易云 + 酷狗 双链路自建。
-// 原先依赖的第三方聚合接口 miss.qingchengkg.cn 已下线；
-// 实测后可长期跑通「搜索→直链」的公开链路只剩这两条，且二者曲目互补。
-const PLAT_NAME = { netease: '网易云', kugou: '酷狗' };
+// 音源：通过 shagua.name 代理实现多平台搜索（网易云、QQ、酷狗、酷我、一听）
+const PLAT_NAME = {
+  netease: '网易云',
+  qq: 'QQ音乐',
+  kugou: '酷狗',
+  kuwo: '酷我',
+  1ting: '一听',
+};
+const SUPPORTED_PLATS = Object.keys(PLAT_NAME);
 const NOPIC = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Crect width='56' height='56' fill='%23e6e8ef'/%3E%3C/svg%3E";
 
 // 状态
 const state = {
   filter: 'name',   // name | id | url
-  type: 'netease',  // 平台
+  type: 'netease',  // 平台: netease|qq|kugou|kuwo|1ting
   page: 1,
   items: [],
   loading: false,
@@ -233,18 +238,31 @@ function playFavorite(i) {
   renderPlaylist();
 }
 
-// ---------- 音源状态条（网易云 + 酷狗 双音源并行，无需手工切换） ----------
+// ---------- 音源状态条（多平台切换） ----------
 function renderPlatforms() {
   platformsEl.innerHTML = '';
   const note = document.createElement('div');
   note.className = 'src-note';
-  note.innerHTML =
-    '<span class="src-badge">网易云</span>' +
-    '<span class="src-badge">酷狗</span>' +
-    '<span class="src-tip">两个音源同时检索，结果合并去重，可播放的版本排在前面</span>';
+  note.innerHTML = '<span class="src-tip">选择音源平台搜索</span>';
   platformsEl.appendChild(note);
-  platformsEl.removeAttribute('role');
-  platformsEl.removeAttribute('aria-label');
+
+  // 平台切换按钮
+  const btnWrap = document.createElement('div');
+  btnWrap.className = 'plat-btns';
+  SUPPORTED_PLATS.forEach(plat => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'plat-btn' + (plat === state.type ? ' active' : '');
+    btn.dataset.plat = plat;
+    btn.textContent = PLAT_NAME[plat];
+    btn.addEventListener('click', () => {
+      state.type = plat;
+      renderPlatforms();
+      doSearch(false);
+    });
+    btnWrap.appendChild(btn);
+  });
+  platformsEl.appendChild(btnWrap);
 }
 
 // ---------- Tab 切换 ----------
@@ -349,10 +367,10 @@ async function doSearch(append) {
   setLoading(true);
 
   const filter = state.filter;
-  const type = 'netease';   // 单一音源，保留字段以兼容后端协议
+  const type = state.type;  // 使用当前选中的平台
 
   try {
-    const resp = await fetch('/api/search', {
+    const resp = await fetch('/api/proxy-search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ input, filter, type, page: String(state.page) }),
@@ -399,7 +417,7 @@ async function doSearch(append) {
 
 // 搜索后同步标题 / 描述 / 结构化数据（利于分享与收录）
 function updateSearchMeta(keyword, type) {
-  const plat = '网易云 · 酷狗';
+  const plat = PLAT_NAME[type] || type;
   const title = keyword + ' - ' + plat + '音乐搜索结果 · 音乐搜索器';
   const desc = '「' + keyword + '」在' + plat + '的搜索结果，共 ' + state.items.length +
     ' 条，支持在线试听、逐字同步歌词与曲目信息复制。';
